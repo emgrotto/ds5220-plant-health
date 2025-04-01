@@ -1,0 +1,124 @@
+---
+title: "Project"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+```
+
+## Supervised Machine Learning: Plant Health
+
+### Reading in the dataset
+
+```{r}
+health_data <- "data/plant_moniter_health_data.csv"
+data <- read.csv(health_data,
+                header = TRUE, sep = ",")
+```
+
+```{r}
+dim(data)
+head(data)
+```
+
+### Exploratory Data Analysis
+
+To check if there are duplicate plant observations recorded, we check if the distinct count of the `Plant_ID` is the same as the number of rows.
+
+```{r}
+data %>% summarise(count = n_distinct(Plant_ID))
+```
+
+Perfect, this field can be dropped. We also renamed the other variables for simplicity.
+
+```{r}
+data <- data[,-c(1)]
+data <- data %>% 
+  rename(
+    Humidity = Humidity_.,
+    Soil_Moisture = Soil_Moisture_.
+    )
+```
+
+Looking at all the variables, we use a pair plot:
+
+```{r, fig.width=12, fig.height=12}
+pairs(data)
+```
+
+These plots show that the variables are not correlated. If so, very weekly. The Health Score, looks like a continuous variable that is used to create the Health Status values.
+
+All variables look roughly normally distributed - we should confirm this:
+
+```{r, fig.width=12}
+par(mfrow=c(3,2))
+
+hist(data$Temperature_C, main="Distribution of Temperature")
+hist(data$Humidity, main="Distribution of Humidity")
+hist(data$Soil_Moisture, main="Distribution of Moisture")
+hist(data$Soil_pH, main="Distribution of pH")
+hist(data$Nutrient_Level, main="Distribution of Nutrient Level")
+hist(data$Light_Intensity_lux, main="Distribution of Intensity Lux")
+```
+These do all look pretty close to a normal distribution. We need to also see the distribution of the two response variables. One of which is a categorical with 2 classes (0 and 1).
+```{r}
+par(mfrow=c(1,2))
+
+hist(data$Health_Score, main = "Distribution of Health Score")
+hist(data$Health_Status, main = "Distribution of Health Status")
+```
+
+Whilst the health score is normally distributed, the health status is very imbalanced - we will have to take this into consideration when we explore modeling plant health.
+
+### Modeling the health status
+
+First we can try model the health status using all variables with logistic regression.
+
+```{r}
+model <- glm(Health_Status ~ Temperature_C + Humidity + Soil_Moisture + Soil_pH + Nutrient_Level + Light_Intensity_lux, 
+             family='binomial',
+             data=data)
+
+summary(model)
+```
+
+This model does not find any of the variables to be statistically significant (except temperature). We should run this model with a train test split to see how well it predicts the health score.
+
+```{r}
+train_size <- 0.75*nrow(data)
+training_sample <- sample(1:nrow(data), train_size)
+training_dataset <- data[training_sample, ]
+testing_dataset <- data[-training_sample, ]
+
+model_validate <- glm(
+  Health_Status ~ Temperature_C + Humidity + Soil_Moisture + Soil_pH + Nutrient_Level + Light_Intensity_lux, 
+  data=training_dataset,
+  family='binomial'
+)
+
+y_pred_probs <- predict(
+  model_validate, 
+  newdata=testing_dataset,
+  type='response'
+)
+
+y_pred <- ifelse(y_pred_probs > 0.5, 1, 0)
+
+table(y_pred, testing_dataset$Health_Status)
+```
+
+Unsurprisingly its predicting the `1` every time. This could be due to the unbalanced nature of the response variable. The distribution of the predicted values might be interesting:
+
+```{r}
+hist(y_pred_probs)
+```
+
+
+
+
+
+
+
+
