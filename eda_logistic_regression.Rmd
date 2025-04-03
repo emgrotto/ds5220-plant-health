@@ -19,8 +19,8 @@ data <- read.csv(health_data,
 ```
 
 ```{r}
-dim(data)
-head(data)
+data$Health_Status = as.factor(data$Health_Status) 
+summary(data) 
 ```
 
 ### Exploratory Data Analysis
@@ -52,7 +52,7 @@ These plots show that the variables are not correlated. If so, very weekly. The 
 
 All variables look roughly normally distributed - we should confirm this:
 
-```{r, fig.width=12}
+```{r, fig.width=12, fig.height=10}
 par(mfrow=c(3,2))
 
 hist(data$Temperature_C, main="Distribution of Temperature")
@@ -67,7 +67,7 @@ These do all look pretty close to a normal distribution. We need to also see the
 par(mfrow=c(1,2))
 
 hist(data$Health_Score, main = "Distribution of Health Score")
-hist(data$Health_Status, main = "Distribution of Health Status")
+hist(as.numeric(data$Health_Status), main = "Distribution of Health Status")
 ```
 
 Whilst the health score is normally distributed, the health status is very imbalanced - we will have to take this into consideration when we explore modeling plant health.
