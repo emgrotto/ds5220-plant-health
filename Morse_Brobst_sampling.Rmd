@@ -1,0 +1,361 @@
+---
+title: "Morse_Brobst_sampling"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+```
+
+## Supervised Machine Learning: Plant Health
+
+### Reading in the dataset
+
+```{r}
+health_data <- "data/plant_moniter_health_data.csv"
+data <- read.csv(health_data,
+                header = TRUE, sep = ",")
+```
+
+```{r}
+data$Health_Status = as.factor(data$Health_Status) 
+summary(data) 
+```
+
+### Undersampling and Oversampling to address the unbalanced response
+
+
+```{r}
+# dropping the Plant_ID and renaming columns for simplicity
+data <- data[,-c(1)]
+data <- data %>% 
+  rename(
+    Humidity = Humidity_.,
+    Soil_Moisture = Soil_Moisture_.
+    )
+```
+
+First, we set up the basic linear model to compare results with.
+
+```{r}
+model <- glm(Health_Status ~ Temperature_C + Humidity + Soil_Moisture + Soil_pH + Nutrient_Level + Light_Intensity_lux, 
+             family='binomial',
+             data=data)
+
+summary(model)
+```
+
+```{r}
+'
+Call:
+glm(formula = Health_Status ~ Temperature_C + Humidity + Soil_Moisture + 
+    Soil_pH + Nutrient_Level + Light_Intensity_lux, family = "binomial", 
+    data = data)
+
+Coefficients:
+                      Estimate Std. Error z value Pr(>|z|)  
+(Intercept)          2.200e+00  1.586e+00   1.387   0.1653  
+Temperature_C       -5.000e-02  2.847e-02  -1.756   0.0791 .
+Humidity             5.100e-03  8.412e-03   0.606   0.5443  
+Soil_Moisture       -6.615e-03  5.667e-03  -1.167   0.2431  
+Soil_pH              5.156e-02  1.631e-01   0.316   0.7520  
+Nutrient_Level       2.253e-03  8.447e-03   0.267   0.7896  
+Light_Intensity_lux  8.306e-06  2.781e-05   0.299   0.7651  
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 924.34  on 999  degrees of freedom
+Residual deviance: 919.08  on 993  degrees of freedom
+AIC: 933.08
+
+Number of Fisher Scoring iterations: 4
+'
+```
+
+
+```{r}
+train_size <- 0.75*nrow(data)
+training_sample <- sample(1:nrow(data), train_size)
+training_dataset <- data[training_sample, ]
+testing_dataset <- data[-training_sample, ]
+
+model_validate <- glm(
+  Health_Status ~ Temperature_C + Humidity + Soil_Moisture + Soil_pH + Nutrient_Level + Light_Intensity_lux, 
+  data=training_dataset,
+  family='binomial'
+)
+
+y_pred_probs <- predict(
+  model_validate, 
+  newdata=testing_dataset,
+  type='response'
+)
+
+y_pred <- ifelse(y_pred_probs > 0.5, 1, 0)
+
+table(y_pred, testing_dataset$Health_Status)
+```
+
+```{r}
+'
+y_pred   0   1
+     1  31 219
+'
+```
+
+
+This shows the problem we need to address. Since class 0 has so few observations the model fails to learn patterns in the data. We need to try both oversampling class 0 and undersampling class 1.
+
+### Undersampling class 1
+
+To randomly undersample, we randomly remove observations from the 1 class so that the total observations for class 1 is equal to the total observations for class 0. This is called Random Downsampling.
+
+```{r}
+data_0 <- data[data$Health_Status == 0, ]
+n_obs_0 <- nrow(data_0)
+data_1 <- data[data$Health_Status == 1, ]
+n_obs_1 <- nrow(data_1)
+
+remove_is <- sample(1:n_obs_1, n_obs_1-n_obs_0)
+data_1_undersampled <- data_1[-remove_is, ]
+
+data_undersampled <- rbind(data_0, data_1_undersampled)
+data_undersampled <- data_undersampled[sample(nrow(data_undersampled)), ]
+```
+
+Now, I will retry the logistic regression.
+
+```{r}
+model_under <- glm(Health_Status ~ Temperature_C + Humidity + Soil_Moisture + Soil_pH + Nutrient_Level + Light_Intensity_lux, 
+             family='binomial',
+             data=data_undersampled)
+
+summary(model_under)
+```
+
+```{r}
+'
+Call:
+glm(formula = Health_Status ~ Temperature_C + Humidity + Soil_Moisture + 
+    Soil_pH + Nutrient_Level + Light_Intensity_lux, family = "binomial", 
+    data = data_undersampled)
+
+Coefficients:
+                      Estimate Std. Error z value Pr(>|z|)
+(Intercept)          6.233e-01  2.107e+00   0.296    0.767
+Temperature_C       -5.274e-02  3.871e-02  -1.362    0.173
+Humidity             8.015e-03  1.065e-02   0.753    0.452
+Soil_Moisture       -9.400e-03  7.461e-03  -1.260    0.208
+Soil_pH              5.636e-02  2.096e-01   0.269    0.788
+Nutrient_Level      -8.063e-04  1.087e-02  -0.074    0.941
+Light_Intensity_lux  1.603e-05  3.509e-05   0.457    0.648
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 482.43  on 347  degrees of freedom
+Residual deviance: 477.71  on 341  degrees of freedom
+AIC: 491.71
+
+Number of Fisher Scoring iterations: 4
+'
+```
+
+
+```{r}
+train_size <- 0.75*nrow(data_undersampled)
+training_sample <- sample(1:nrow(data_undersampled), train_size)
+training_dataset <- data_undersampled[training_sample, ]
+testing_dataset <- data_undersampled[-training_sample, ]
+
+model_validate <- glm(
+  Health_Status ~ Temperature_C + Humidity + Soil_Moisture + Soil_pH + Nutrient_Level + Light_Intensity_lux, 
+  data=training_dataset,
+  family='binomial'
+)
+
+y_pred_probs <- predict(
+  model_validate, 
+  newdata=testing_dataset,
+  type='response'
+)
+
+y_pred <- ifelse(y_pred_probs > 0.5, 1, 0)
+
+table(y_pred, testing_dataset$Health_Status)
+```
+
+```{r}
+'
+y_pred  0  1
+     0 25 17
+     1 19 26
+'
+```
+
+
+### Oversampling class 0
+
+To oversample class 0, we add "new" class 0 to the data by sampling (with replacement) from the existing class 0 observations. This is also called random Upsampling.
+
+```{r}
+data_0_oversampled <- data_0[sample(n_obs_0, n_obs_1, replace = TRUE), ]
+data_oversampled <- rbind(data_0_oversampled, data_1)
+data_oversampled <- data_oversampled[sample(nrow(data_oversampled)), ]
+```
+
+```{r}
+model_over <- glm(Health_Status ~ Temperature_C + Humidity + Soil_Moisture + Soil_pH + Nutrient_Level + Light_Intensity_lux, 
+             family='binomial',
+             data=data_oversampled)
+
+summary(model_over)
+```
+
+```{r}
+'
+Call:
+glm(formula = Health_Status ~ Temperature_C + Humidity + Soil_Moisture + 
+    Soil_pH + Nutrient_Level + Light_Intensity_lux, family = "binomial", 
+    data = data_oversampled)
+
+Coefficients:
+                      Estimate Std. Error z value Pr(>|z|)    
+(Intercept)          2.354e+00  9.660e-01   2.437 0.014805 *  
+Temperature_C       -5.864e-02  1.723e-02  -3.403 0.000667 ***
+Humidity             9.647e-03  4.893e-03   1.972 0.048624 *  
+Soil_Moisture       -9.539e-03  3.395e-03  -2.810 0.004960 ** 
+Soil_pH             -1.700e-01  9.841e-02  -1.727 0.084149 .  
+Nutrient_Level      -1.671e-03  5.129e-03  -0.326 0.744626    
+Light_Intensity_lux  8.688e-06  1.706e-05   0.509 0.610614    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+(Dispersion parameter for binomial family taken to be 1)
+
+    Null deviance: 2290.2  on 1651  degrees of freedom
+Residual deviance: 2261.7  on 1645  degrees of freedom
+AIC: 2275.7
+
+Number of Fisher Scoring iterations: 4
+'
+```
+
+
+```{r}
+train_size <- 0.75*nrow(data_oversampled)
+training_sample <- sample(1:nrow(data_oversampled), train_size)
+training_dataset <- data_oversampled[training_sample, ]
+testing_dataset <- data_oversampled[-training_sample, ]
+
+model_validate <- glm(
+  Health_Status ~ Temperature_C + Humidity + Soil_Moisture + Soil_pH + Nutrient_Level + Light_Intensity_lux, 
+  data=training_dataset,
+  family='binomial'
+)
+
+y_pred_probs <- predict(
+  model_validate, 
+  newdata=testing_dataset,
+  type='response'
+)
+
+y_pred <- ifelse(y_pred_probs > 0.5, 1, 0)
+
+table(y_pred, testing_dataset$Health_Status)
+```
+
+```{r}
+'
+y_pred   0   1
+     0 100  99
+     1 104 110
+'
+```
+
+The 2 sampling approaches show an improvement on the model compared to using the imbalanced data. However, since the random sampling is either removing most of a class or adding (with replancement) to a class the models have a lot of variance. This is seen easily by running the above a few times. To get somewhat stable results we will need to consider repeating the process many time over and looking at the variance in accuracy of the models and coefficient estimates.
+
+### Variance of over sampling
+
+We created a function to return the oversampled dataset without a seed set. This function can be called repetitively to get different oversamples.
+```{r}
+oversample <- function(data){
+  data_0 <- data[data$Health_Status == 0, ]
+  n_obs_0 <- nrow(data_0)
+  data_1 <- data[data$Health_Status == 1, ]
+  n_obs_1 <- nrow(data_1)
+  
+  data_0_oversampled <- data_0[sample(n_obs_0, n_obs_1, replace = TRUE), ]
+  data_oversampled <- rbind(data_0_oversampled, data_1)
+  data_oversampled <- data_oversampled[sample(nrow(data_oversampled)), ]
+  
+  data_oversampled
+}
+```
+
+
+```{r}
+B <- 1000
+coefficient_table <- NULL
+accuracy <- seq(B)
+
+for(i in 1:B){
+  data_sample <- oversample(data)
+  train_size <- 0.75*nrow(data_sample)
+  training_sample <- sample(1:nrow(data_sample), train_size)
+  training_dataset <- data_sample[training_sample, ]
+  testing_dataset <- data_sample[-training_sample, ]
+  
+  model_validate <- glm(
+    Health_Status ~ Temperature_C + Humidity + Soil_Moisture + Soil_pH + Nutrient_Level + Light_Intensity_lux, 
+    data=training_dataset,
+    family='binomial'
+  )
+  
+  y_pred_probs <- predict(model_validate, newdata=testing_dataset,type='response')
+  y_pred <- ifelse(y_pred_probs > 0.5, 1, 0)
+  correct <- ifelse(y_pred == testing_dataset$Health_Status, 1, 0)
+  accuracy[i] <- mean(correct)
+  
+  if(is.null(coefficient_table)){
+    coefficient_table <- model_validate$coefficients
+  } else {
+    coefficient_table <- rbind(coefficient_table, model_validate$coefficients)
+
+  }
+}
+coefficient_table <- as.data.frame(coefficient_table)
+```
+
+```{r}
+par(mfrow=c(3, 2))
+hist(coefficient_table$Temperature_C)
+hist(coefficient_table$Humidity)
+hist(coefficient_table$Soil_Moisture)
+hist(coefficient_table$Soil_pH)
+hist(coefficient_table$Nutrient_Level)
+hist(coefficient_table$Light_Intensity_lux)
+```
+
+```{r}
+hist(accuracy)
+```
+
+The Variance in the model's performance is alarming however, with enough iterations we see that the mean accuracy is greater than 50% so some information about the population and the relationship is represented in the sample. 
+
+### package imbalance
+
+This package provides other strategies for oversampling. This could be interesting to play with but unfortunately RStudio struggled to download the package
+
+```{r}
+#install.packages("devtools")
+#devtools::install_github("ncordon/imbalance")
+```
+
+
+
+
+
+
